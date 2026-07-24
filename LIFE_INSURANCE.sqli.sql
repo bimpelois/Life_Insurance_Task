@@ -1,9 +1,6 @@
 CREATE DATABASE life_insurance;
 -- USE life_insurance;
 
--- ------------------------------------------------------------
--- 1. POLICYHOLDERS
--- ------------------------------------------------------------
 CREATE TABLE policyholders (
     policyholder_id   INT AUTO_INCREMENT PRIMARY KEY,
     full_name         VARCHAR(20) NOT NULL,
@@ -19,9 +16,7 @@ INSERT INTO policyholders (full_name, date_of_birth, phone, email) VALUES
 ('Chike Okafor',     '1982-01-30', '08034445555', 'chike.okafor234@gmail.com'),
 ('Bimpe Adewale',    '1995-09-05', '08035556666', 'bimpeadewale546@gmail.com'),
 ('Segun Alabi',      '1979-03-14', '08036667777', 'segun_alabi897@gmail.com');
--- ------------------------------------------------------------
--- 2. AGENTS  (permanent agents + independent brokers)
--- ------------------------------------------------------------
+
 CREATE TABLE agents (
     agent_id         INT AUTO_INCREMENT PRIMARY KEY,
     full_name        VARCHAR(20) NOT NULL,
@@ -39,7 +34,6 @@ CREATE TABLE agents (
     )
 );
 
-
 INSERT INTO agents (full_name, phone, email, agent_type, specialisation) VALUES
 ('Femi Adeyemi',   '08111112222', 'femiadeyemi66@gmail.com',   'permanent', 'Life'),
 ('Grace Nweke',    '08111113333', 'gracenweke892@gmail.com',    'permanent', 'Auto'),
@@ -47,9 +41,6 @@ INSERT INTO agents (full_name, phone, email, agent_type, specialisation) VALUES
 ('Chidera Obinna', '08111115555', 'chideraobinna123@gmail.com',  'broker',    NULL),
 ('Peter Coker',    '08111116666', 'petercoker765@gmail.com',     'broker',    NULL); 
 
--- ------------------------------------------------------------
--- 3. POLICY TYPES  (Life, Auto, Home)
--- ------------------------------------------------------------
 CREATE TABLE policy_types (
     policy_type_id    INT AUTO_INCREMENT PRIMARY KEY,
     full_name              VARCHAR(20)  NOT NULL UNIQUE,
@@ -62,9 +53,6 @@ INSERT INTO policy_types (name, description, base_premium_rate) VALUES
 ('Auto', 'Covers damage/liability for the policyholder''s vehicle',         3500.00),
 ('Home', 'Covers damage/loss to the policyholder''s home and contents',     4200.00);
 
--- ------------------------------------------------------------
--- 4. POLICIES
--- ------------------------------------------------------------
 CREATE TABLE policies (
     policy_id        INT AUTO_INCREMENT PRIMARY KEY,
     policy_number    VARCHAR(20) NOT NULL UNIQUE,
@@ -100,9 +88,6 @@ INSERT INTO policies (policy_number, policyholder_id, policy_type_id, agent_id, 
 ('POL-0006', 4, 3, 4, '2024-07-01', '2025-07-01', 4400.00, 'active'),   -- Chike: Home (2nd policy)
 ('POL-0007', 5, 2, 2, '2024-04-01', '2025-04-01', 3550.00, 'active');   -- Bimpe: Auto
 
--- ------------------------------------------------------------
--- 5. CLAIMS
--- ------------------------------------------------------------
 CREATE TABLE claims (
     claim_id         INT AUTO_INCREMENT PRIMARY KEY,
     policy_id        INT NOT NULL,
@@ -131,15 +116,12 @@ INSERT INTO claims (policy_id, date_filed, description, amount_claimed, amount_a
 (1, '2024-12-01', 'Death benefit claim (test data)', 50000.00,   NULL,'pending'),
 (7, '2024-07-20', 'Windscreen crack',                 400.00,     NULL,'rejected');
 
--- ------------------------------------------------------------
--- 6. PAYMENTS  (premium instalments)
--- ------------------------------------------------------------
 CREATE TABLE payments (
     payment_id     INT AUTO_INCREMENT PRIMARY KEY,
     policy_id      INT NOT NULL,
     due_date       DATE NOT NULL,
     amount         DECIMAL(10,2) NOT NULL,
-    date_paid      DATE NULL,               -- NULL until actually paid
+    date_paid      DATE NULL,              
     status         ENUM('paid', 'unpaid', 'overdue') NOT NULL DEFAULT 'unpaid',
 
     CONSTRAINT fk_payments_policy
@@ -150,16 +132,13 @@ CREATE TABLE payments (
 INSERT INTO payments (policy_id, due_date, amount, date_paid, status) VALUES
 (1, '2024-01-01', 5200.00, '2024-01-01', 'paid'),
 (2, '2024-03-15',  300.00, '2024-03-15', 'paid'),
-(2, '2024-04-15',  300.00, NULL,          'overdue'),   -- overdue example
+(2, '2024-04-15',  300.00, NULL,          'overdue'),  
 (3, '2023-06-01', 3400.00, '2023-06-01', 'paid'),
 (4, '2024-02-10',  358.00, '2024-02-10', 'paid'),
-(4, '2024-03-10',  358.00, NULL,          'overdue'),   -- overdue example
+(4, '2024-03-10',  358.00, NULL,          'overdue'),   
 (6, '2024-07-01',  366.00, '2024-07-01', 'paid'),
-(7, '2024-04-01',  296.00, NULL,          'unpaid');    -- not yet due/overdue
+(7, '2024-04-01',  296.00, NULL,          'unpaid'); 
 
--- ------------------------------------------------------------
--- 7. BONUS: BENEFICIARIES  (Life policies only)
--- ------------------------------------------------------------
 CREATE TABLE beneficiaries (
     beneficiary_id     INT AUTO_INCREMENT PRIMARY KEY,
     policy_id          INT NOT NULL,
@@ -169,7 +148,7 @@ CREATE TABLE beneficiaries (
 
     CONSTRAINT fk_beneficiaries_policy
         FOREIGN KEY (policy_id) REFERENCES policies(policy_id)
-        ON DELETE CASCADE,   -- beneficiaries are meaningless without the policy
+        ON DELETE CASCADE,  
 
     CONSTRAINT chk_beneficiary_share CHECK (
         percentage_share > 0 AND percentage_share <= 100
@@ -181,131 +160,3 @@ INSERT INTO beneficiaries (policy_id, full_name, relationship, percentage_share)
 (1, 'David Obi',    'Son',    40.00);
 
 
-DELIMITER ##
-CREATE TRIGGER trg_beneficiary_life_only
-BEFORE INSERT ON beneficiaries
-FOR EACH ROW
-BEGIN
-    DECLARE v_type_name VARCHAR(40);
-    SELECT pt.name INTO v_type_name
-    FROM policies p
-    JOIN policy_types pt ON pt.policy_type_id = p.policy_type_id
-    WHERE p.policy_id = NEW.policy_id;
-
-    IF v_type_name <> 'Life' THEN
-        SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Beneficiaries can only be added to Life policies';
-    END IF;
-END$$
-DELIMITER ;
-
-
--- ============================================================
--- REQUIRED QUERIES
--- ============================================================
-
--- A. Every policyholder's full name + number of ACTIVE policies (include zero)
-SELECT
-    ph.full_name,
-    COUNT(p.policy_id) AS active_policy_count
-FROM policyholders ph
-LEFT JOIN policies p
-    ON p.policyholder_id = ph.policyholder_id
-    AND p.status = 'active'          -- filter belongs in ON, not WHERE
-GROUP BY ph.policyholder_id, ph.full_name
-ORDER BY ph.full_name;
-
-
--- B. Total amount approved per policy type, ordered by total descending
-SELECT
-    pt.name AS policy_type,
-    COALESCE(SUM(c.amount_approved), 0) AS total_approved
-FROM policy_types pt
-JOIN policies p ON p.policy_type_id = pt.policy_type_id
-JOIN claims c   ON c.policy_id = p.policy_id
-GROUP BY pt.policy_type_id, pt.name
-ORDER BY total_approved DESC;
-
-
--- C. Policyholders with at least one rejected claim + count of rejected claims
-SELECT
-    ph.full_name,
-    COUNT(c.claim_id) AS rejected_claim_count
-FROM policyholders ph
-JOIN policies p ON p.policyholder_id = ph.policyholder_id
-JOIN claims c   ON c.policy_id = p.policy_id
-WHERE c.status = 'rejected'
-GROUP BY ph.policyholder_id, ph.full_name
-HAVING COUNT(c.claim_id) >= 1
-ORDER BY rejected_claim_count DESC;
-
-
--- D. Every agent + number of active policies sold (include zero)
-SELECT
-    a.full_name,
-    COUNT(p.policy_id) AS active_policies_sold
-FROM agents a
-LEFT JOIN policies p
-    ON p.agent_id = a.agent_id
-    AND p.status = 'active'
-GROUP BY a.agent_id, a.full_name
-ORDER BY a.full_name;
-
-
--- E. Average approved claim amount per policy type (>= 3 approved claims)
-SELECT
-    pt.name AS policy_type,
-    ROUND(AVG(c.amount_approved), 2) AS avg_approved,
-    COUNT(c.claim_id) AS approved_claim_count
-FROM policy_types pt
-JOIN policies p ON p.policy_type_id = pt.policy_type_id
-JOIN claims c   ON c.policy_id = p.policy_id
-WHERE c.status = 'approved'
-  AND c.amount_approved IS NOT NULL
-GROUP BY pt.policy_type_id, pt.name
-HAVING COUNT(c.claim_id) >= 3;
-
--- ============================================================
--- BONUS QUERIES
--- ============================================================
-
--- 1. Flag policies with premium payments more than 30 days overdue
-SELECT
-    p.policy_number,
-    pay.payment_id,
-    pay.due_date,
-    pay.amount,
-    DATEDIFF(CURDATE(), pay.due_date) AS days_overdue
-FROM payments pay
-JOIN policies p ON p.policy_id = pay.policy_id
-WHERE pay.date_paid IS NULL
-  AND DATEDIFF(CURDATE(), pay.due_date) > 30;
-
-
--- 2. "High-risk" policyholders: more than 2 claims filed in the last 12 months
-SELECT
-    ph.full_name,
-    COUNT(c.claim_id) AS claims_last_12_months
-FROM policyholders ph
-JOIN policies p ON p.policyholder_id = ph.policyholder_id
-JOIN claims c   ON c.policy_id = p.policy_id
-WHERE c.date_filed >= CURDATE() - INTERVAL 12 MONTH
-GROUP BY ph.policyholder_id, ph.full_name
-HAVING COUNT(c.claim_id) > 2;
-
-
--- 3. CREATE VIEW: policy_claims_summary
-CREATE VIEW policy_claims_summary AS
-SELECT
-    p.policy_number,
-    pt.name              AS policy_type,
-    ph.full_name          AS policyholder_name,
-    COUNT(c.claim_id)     AS total_claims_filed,
-    COALESCE(SUM(c.amount_approved), 0) AS total_amount_approved
-FROM policies p
-JOIN policy_types pt    ON pt.policy_type_id = p.policy_type_id
-JOIN policyholders ph   ON ph.policyholder_id = p.policyholder_id
-LEFT JOIN claims c      ON c.policy_id = p.policy_id
-GROUP BY p.policy_id, p.policy_number, pt.name, ph.full_name;
-
--- Usage: SELECT * FROM policy_claims_summary;
